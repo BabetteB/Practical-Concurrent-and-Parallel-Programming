@@ -59,6 +59,22 @@
       - [**Why `BlockingQueue` is Ideal for Producer-Consumer**:](#why-blockingqueue-is-ideal-for-producer-consumer)
     - [**Summary of Key Concepts**](#summary-of-key-concepts)
   - [Lecture 04 : Testing \& Verification](#lecture-04--testing--verification)
+    - [**Program Correctness in Concurrent Programming**](#program-correctness-in-concurrent-programming)
+    - [**Concurrency Properties: Safety vs. Liveness**](#concurrency-properties-safety-vs-liveness)
+    - [**Testing Concurrent Programs**](#testing-concurrent-programs)
+      - [**Challenges in Testing Concurrent Programs**:](#challenges-in-testing-concurrent-programs)
+      - [**Testing Strategies**:](#testing-strategies)
+    - [**JUnit 5 for Testing Concurrent Programs**](#junit-5-for-testing-concurrent-programs)
+    - [**Tools for Testing and Verification**](#tools-for-testing-and-verification)
+    - [**Deadlocks and Testing for Them**](#deadlocks-and-testing-for-them)
+    - [**Bounded Buffer**](#bounded-buffer)
+      - [**Key Concepts of Bounded Buffer**:](#key-concepts-of-bounded-buffer)
+    - [**Implementation of Bounded Buffer**](#implementation-of-bounded-buffer)
+      - [**Semaphore-Based Bounded Buffer**](#semaphore-based-bounded-buffer)
+      - [**Explanation**:](#explanation)
+      - [**JUnit 5 Test for Bounded Buffer**:](#junit-5-test-for-bounded-buffer)
+      - [**Explanation**:](#explanation-1)
+    - [**Summary**](#summary)
   - [Lecture 05 : Lock-Free Data Structures](#lecture-05--lock-free-data-structures)
   - [Lecture 06 : Linearizability](#lecture-06--linearizability)
 
@@ -735,6 +751,309 @@ In this example:
 
 ## Lecture 04 : Testing & Verification
 
+Here are thorough notes based on **Lecture 4** on **Testing & Verification**, drawing from the lecture slides and the reading material from *Java Concurrency in Practice* Chapter 12, and additional resources like **JUnit 5 documentation**.
+
+---
+
+### **Program Correctness in Concurrent Programming**
+
+A **concurrent program** is considered **correct** if it satisfies its specification. This can be broken down into two types of properties:
+- **Safety**: Ensures that "something bad never happens."
+  - Example: Two traffic lights at an intersection are never green at the same time.
+  - In code, this could translate to ensuring shared resources like a counter or collection never reach an invalid state, e.g., a collection size being less than 0.
+
+- **Liveness**: Guarantees that "something good eventually happens."
+  - Example: A traffic light will eventually turn red.
+  - In code, this might mean that operations like adding items to a collection are eventually successful, even in high contention environments.
+
+Testing concurrent programs focuses on identifying **undesired interleavings**, which are referred to as **counterexamples** (examples of thread execution orders that violate correctness). Unlike sequential programs, concurrent program bugs are often **non-deterministic**, meaning they may not manifest in every run.
+
+---
+
+### **Concurrency Properties: Safety vs. Liveness**
+
+1. **Safety Properties**:
+   - The counterexample is a **finite interleaving** where the safety property is violated.
+   - For example: If we have a property stating that a collection size must never be less than 0, a counterexample would be an interleaving where two threads simultaneously modify the collection in a way that makes the size negative.
+
+2. **Liveness Properties**:
+   - A counterexample here is an **infinite interleaving** where the property never holds.
+   - For example: If a program guarantees that a thread will eventually acquire a lock, a counterexample would be an infinite execution where this thread is perpetually blocked (perhaps due to deadlock or starvation).
+
+### **Testing Concurrent Programs**
+
+#### **Challenges in Testing Concurrent Programs**:
+- **Nondeterminism**: The order in which threads execute is unpredictable, and this unpredictability makes concurrent programs hard to test.
+- **Interleaving Variability**: Since the actual thread interleavings that lead to errors are rare, triggering them reliably through testing is a significant challenge.
+- **Race Conditions**: A common issue in concurrent programs where two or more threads access shared data concurrently without proper synchronization, leading to unpredictable results.
+
+#### **Testing Strategies**:
+1. **Functional Correctness Tests**:
+   - These are standard tests that aim to verify the **correct behavior** of a concurrent program (similar to tests in sequential programming but adapted for concurrency).
+   - Example: Testing that a **counter** class returns the correct value after multiple threads increment it concurrently.
+   
+2. **Stress Testing and High Contention**:
+   - Stress testing is designed to force as many interleavings as possible by running many threads under high contention, increasing the likelihood of triggering race conditions or deadlocks.
+
+3. **Repeated Execution**:
+   - Due to the non-deterministic nature of concurrent programs, repeating tests multiple times (using JUnit’s `@RepeatedTest`) can help uncover concurrency bugs.
+
+---
+
+### **JUnit 5 for Testing Concurrent Programs**
+
+JUnit 5 provides a simple framework for writing and organizing tests. Here's how you can use it for testing concurrent programs:
+
+1. **Sequential Tests**:
+   - These are standard unit tests that run sequentially and ensure basic functionality. In the context of concurrent programs, they can be useful for verifying that basic operations work in the absence of multithreading.
+
+   Example:
+   ```java
+   @Test
+   public void testingCounterSequential() {
+       Counter counter = new CounterDR();
+       int expectedValue = 0;
+       for (int i = 0; i < 10_000; i++) {
+           counter.inc();
+           expectedValue++;
+       }
+       assertEquals(expectedValue, counter.get());
+   }
+   ```
+
+2. **Concurrent Tests**:
+   - JUnit 5 can be extended to support tests that simulate concurrent environments. You can create **multiple threads** that operate on a shared resource and verify its final state.
+
+   Example:
+   ```java
+   @RepeatedTest(10)
+   public void testingCounterParallel() throws InterruptedException {
+       int N = 1000;
+       int nrThreads = 10;
+       Counter counter = new CounterDR();
+
+       // Create and start multiple threads
+       Thread[] threads = new Thread[nrThreads];
+       for (int i = 0; i < nrThreads; i++) {
+           threads[i] = new Thread(() -> {
+               for (int j = 0; j < N; j++) {
+                   counter.inc();
+               }
+           });
+           threads[i].start();
+       }
+
+       // Wait for all threads to finish
+       for (int i = 0; i < nrThreads; i++) {
+           threads[i].join();
+       }
+
+       // Verify the final count
+       assertEquals(N * nrThreads, counter.get());
+   }
+   ```
+   In this test:
+   - We create 10 threads, each incrementing the counter 1000 times.
+   - We use `assertEquals` to verify that the final value of the counter is `N * nrThreads`.
+
+3. **Testing with Blocking Queues**:
+   JUnit is also used for testing common concurrency patterns like **producer-consumer** using blocking queues. For example, verifying that producers can insert into the queue and consumers can retrieve items concurrently.
+
+   Example:
+   ```java
+   @RepeatedTest(10)
+   public void producerConsumerTest() throws InterruptedException {
+       BlockingQueue<Integer> queue = new ArrayBlockingQueue<>(10);
+       ExecutorService executor = Executors.newFixedThreadPool(2);
+
+       // Producer
+       executor.submit(() -> {
+           for (int i = 0; i < 10; i++) {
+               queue.put(i);
+           }
+       });
+
+       // Consumer
+       executor.submit(() -> {
+           for (int i = 0; i < 10; i++) {
+               try {
+                   queue.take();
+               } catch (InterruptedException e) {
+                   Thread.currentThread().interrupt();
+               }
+           }
+       });
+
+       executor.shutdown();
+       executor.awaitTermination(1, TimeUnit.MINUTES);
+       assertTrue(queue.isEmpty());
+   }
+   ```
+
+   Here, the `BlockingQueue` is shared between producer and consumer threads, and the test verifies that the queue is empty after all items are processed.
+
+---
+
+### **Tools for Testing and Verification**
+
+1. **Java PathFinder**:
+   - This is a formal verification tool for Java programs that systematically explores all possible thread interleavings. It is used to check properties like deadlocks, race conditions, and general correctness in concurrent Java programs.
+
+2. **FindBugs and Other Static Analysis Tools**:
+   - Tools like **FindBugs** can be used to detect potential concurrency issues, such as missing synchronization and improper use of volatile variables.
+
+---
+
+### **Deadlocks and Testing for Them**
+
+A **deadlock** occurs when two or more threads are blocked forever, waiting on each other to release locks. Deadlocks are challenging to detect since they may occur only under specific conditions (rare interleavings).
+
+**Testing Deadlocks**:
+- To catch deadlocks, stress tests can be written where many threads attempt to acquire locks in different orders, increasing the chances of detecting a deadlock scenario.
+
+---
+
+### **Bounded Buffer**
+
+A **Bounded Buffer** is a classic concurrency problem where a fixed-size buffer is shared between a **producer** and a **consumer**. The producer inserts items into the buffer, and the consumer removes them. The challenge is to ensure that the buffer never overflows (producer tries to add to a full buffer) or underflows (consumer tries to remove from an empty buffer). This is typically solved using synchronization mechanisms like **semaphores** or **locks**.
+
+#### **Key Concepts of Bounded Buffer**:
+1. **Producer-Consumer Problem**:
+   - The **producer** adds items to the buffer, and the **consumer** removes them.
+   - The producer must block if the buffer is full.
+   - The consumer must block if the buffer is empty.
+
+2. **Bounded Buffer Properties**:
+   - **Capacity**: The buffer has a fixed maximum size, known as its capacity.
+   - **Blocking**: When the buffer is full, producers are blocked from inserting. Similarly, when the buffer is empty, consumers are blocked from removing items.
+
+---
+
+### **Implementation of Bounded Buffer**
+
+In **Java**, a bounded buffer can be implemented using various concurrency utilities provided by the `java.util.concurrent` package. One common approach is using a **semaphore-based solution** or the **BlockingQueue** class, which provides built-in support for blocking on full or empty conditions.
+
+Here is an example from *Java Concurrency in Practice* (Chapter 12):
+
+#### **Semaphore-Based Bounded Buffer**
+In this approach, we use semaphores to manage the availability of "slots" in the buffer:
+- A **semaphore for empty slots** tracks how many spaces are left in the buffer.
+- A **semaphore for filled slots** tracks how many items are available for consumption.
+
+```java
+// example from *Java Concurrency in Practice* (Chapter 12)
+import java.util.concurrent.Semaphore;
+
+public class BoundedBuffer<E> {
+    private final Semaphore availableItems, availableSpaces;
+    private final E[] items;
+    private int putPosition = 0, takePosition = 0;
+
+    public BoundedBuffer(int capacity) {
+        availableItems = new Semaphore(0);
+        availableSpaces = new Semaphore(capacity);
+        items = (E[]) new Object[capacity];
+    }
+
+    public void put(E x) throws InterruptedException {
+        availableSpaces.acquire(); // Wait if no space available
+        doInsert(x);
+        availableItems.release(); // Signal that an item is available
+    }
+
+    public E take() throws InterruptedException {
+        availableItems.acquire(); // Wait if no items available
+        E item = doExtract();
+        availableSpaces.release(); // Signal that a space is available
+        return item;
+    }
+
+    private synchronized void doInsert(E x) {
+        items[putPosition] = x;
+        putPosition = (putPosition + 1) % items.length;
+    }
+
+    private synchronized E doExtract() {
+        E x = items[takePosition];
+        takePosition = (takePosition + 1) % items.length;
+        return x;
+    }
+}
+```
+
+#### **Explanation**:
+1. **Semaphores**:
+   - **availableSpaces** semaphore tracks the number of empty slots in the buffer.
+   - **availableItems** semaphore tracks the number of filled slots (items ready for consumption).
+
+2. **Blocking Behavior**:
+   - **Producers** call `put(E x)`, which first checks if there is available space by acquiring the `availableSpaces` semaphore. If no space is available, the producer is blocked until a consumer removes an item.
+   - **Consumers** call `take()`, which checks if there is an available item by acquiring the `availableItems` semaphore. If no item is available, the consumer is blocked until the producer adds a new item.
+
+3. **Synchronized Methods**:
+   - The actual insertion (`doInsert`) and extraction (`doExtract`) are **synchronized** to protect shared variables (`putPosition` and `takePosition`), ensuring thread safety.
+
+#### **JUnit 5 Test for Bounded Buffer**:
+Here’s how you might write a test to verify the behavior of the **Bounded Buffer**:
+
+```java
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+import java.util.concurrent.*;
+
+public class BoundedBufferTest {
+    @Test
+    public void testPutAndTake() throws InterruptedException {
+        BoundedBuffer<Integer> buffer = new BoundedBuffer<>(10);
+
+        buffer.put(1);
+        buffer.put(2);
+
+        assertEquals(1, buffer.take());
+        assertEquals(2, buffer.take());
+    }
+
+    @Test
+    public void testBlockingOnFullBuffer() throws InterruptedException {
+        BoundedBuffer<Integer> buffer = new BoundedBuffer<>(2);
+        buffer.put(1);
+        buffer.put(2);
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        executor.submit(() -> {
+            try {
+                buffer.put(3); // This will block because the buffer is full
+                fail(); // We should never reach this if the buffer is blocking correctly
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        Thread.sleep(1000); // Wait for some time to ensure blocking
+        assertEquals(1, buffer.take()); // This will unblock the put operation
+        executor.shutdown();
+    }
+}
+```
+
+#### **Explanation**:
+1. **Basic Test** (`testPutAndTake`):
+   - This test verifies that the `put()` and `take()` operations work as expected: we put two integers in the buffer and take them out, ensuring that the correct values are returned.
+
+2. **Blocking Test** (`testBlockingOnFullBuffer`):
+   - This test verifies that the buffer blocks correctly when full. We attempt to `put()` a third item in a buffer with a capacity of 2, which should block the producer.
+   - We then take an item from the buffer, which should unblock the producer and allow it to complete the `put()` operation.
+
+---
+
+### **Summary**
+
+- Testing concurrent programs is a challenging task because of nondeterminism and the difficulty of reproducing bugs reliably.
+- **Safety and liveness properties** form the foundation of reasoning about program correctness.
+- JUnit 5 is an effective tool for writing both sequential and concurrent tests. By leveraging multiple threads and repeated execution, you can increase the chances of finding concurrency bugs.
+- Formal tools like **Java PathFinder** can help in verifying correctness by exploring all possible interleavings of threads.
+- - **Bounded Buffers** solve the classic producer-consumer problem by using synchronization primitives (like semaphores) to ensure that producers and consumers can safely share a fixed-size buffer.
+- The **Semaphore-based implementation** blocks the producer when the buffer is full and blocks the consumer when the buffer is empty.
 
 ## Lecture 05 : Lock-Free Data Structures
 
