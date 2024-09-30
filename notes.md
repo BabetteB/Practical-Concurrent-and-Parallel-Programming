@@ -34,6 +34,30 @@
       - [**How to Make the Solution Fair?**](#how-to-make-the-solution-fair)
     - [**Key Takeaways**](#key-takeaways)
   - [Lecture 03 : Shared Memory II](#lecture-03--shared-memory-ii)
+    - [**Thread-Safe Classes**](#thread-safe-classes)
+      - [**Key Concepts in Thread Safety:**](#key-concepts-in-thread-safety)
+      - [**Designing a Thread-Safe Class**:](#designing-a-thread-safe-class)
+    - [**Safe Publication**](#safe-publication)
+      - [**Safe Publication Methods**:](#safe-publication-methods)
+      - [**Example: Safe Publication with `volatile` and `final`**:](#example-safe-publication-with-volatile-and-final)
+    - [**Semaphores**](#semaphores)
+      - [**How Semaphores Work:**](#how-semaphores-work)
+      - [**Types of Semaphores**:](#types-of-semaphores)
+      - [**Java Example: Using Semaphore**](#java-example-using-semaphore)
+      - [**Semaphores and Producer-Consumer Problem**:](#semaphores-and-producer-consumer-problem)
+    - [**Barriers**](#barriers)
+      - [**How Barriers Work**:](#how-barriers-work)
+      - [**Java Example: Using CyclicBarrier**](#java-example-using-cyclicbarrier)
+      - [**Use Cases for Barriers**:](#use-cases-for-barriers)
+    - [**Instance Confinement**](#instance-confinement)
+      - [**How It Works**:](#how-it-works)
+      - [**Example of Thread Confinement**:](#example-of-thread-confinement)
+      - [**Advantages of Instance Confinement**:](#advantages-of-instance-confinement)
+      - [**Instance Confinement in Real-World Scenarios**:](#instance-confinement-in-real-world-scenarios)
+    - [**Producer-Consumer Problem**](#producer-consumer-problem)
+      - [**Solution: Using Blocking Queues**](#solution-using-blocking-queues)
+      - [**Why `BlockingQueue` is Ideal for Producer-Consumer**:](#why-blockingqueue-is-ideal-for-producer-consumer)
+    - [**Summary of Key Concepts**](#summary-of-key-concepts)
   - [Lecture 04 : Testing \& Verification](#lecture-04--testing--verification)
   - [Lecture 05 : Lock-Free Data Structures](#lecture-05--lock-free-data-structures)
   - [Lecture 06 : Linearizability](#lecture-06--linearizability)
@@ -389,6 +413,325 @@ A fair lock ensures that threads acquire the lock in the order they requested it
 
 ## Lecture 03 : Shared Memory II
 
+### **Thread-Safe Classes**
+
+A **thread-safe class** is a class where **concurrent execution** of methods and field accesses does not result in **data races**. This means that the class ensures correct behavior when accessed from multiple threads simultaneously.
+
+#### **Key Concepts in Thread Safety:**
+
+1. **Data Race**:
+   - A data race occurs when two threads access the same shared memory location, at least one access is a write, and the accesses are not ordered by the **happens-before relationship**. If a data race occurs, the behavior of the program becomes non-deterministic.
+
+2. **Class State**:
+   - The class state refers to the fields defined in the class. For a class to be thread-safe, we need to ensure that no two threads can access or modify the shared state (class fields) concurrently without synchronization.
+
+3. **Mutual Exclusion**:
+   - Achieving thread safety requires enforcing mutual exclusion, meaning that only one thread can access the critical section at a time. In Java, mutual exclusion can be enforced using synchronization mechanisms like the `synchronized` keyword or explicit locks such as `ReentrantLock`.
+
+4. **Escaping**:
+   - A class is **safe from escaping** when it ensures that shared state does not leak out of the class, where it could be accessed without synchronization. This is typically done by making fields `private` and providing controlled access through methods that are properly synchronized.
+
+#### **Designing a Thread-Safe Class**:
+To analyze whether a class is thread-safe, ensure that:
+- **No concurrent access** to shared state results in data races.
+- **Shared fields** are either properly synchronized or are **immutable** (unchanging after creation).
+- Use of **locks** or **synchronization mechanisms** ensures visibility of updates across threads.
+
+---
+
+### **Safe Publication**
+
+**Publication** refers to making an object accessible to other threads. If an object is not published safely, another thread may see it in an incomplete or inconsistent state.
+
+#### **Safe Publication Methods**:
+1. **Using `volatile`**:
+   - Declaring a field as `volatile` ensures visibility guarantees across threads. When one thread writes to a `volatile` variable, all subsequent reads by other threads will see that updated value.
+
+2. **Using `final`**:
+   - Declaring fields as `final` guarantees that they are properly constructed and visible to other threads after the object is fully initialized. Once a final field is assigned during object construction, it cannot be changed, making it a reliable way to publish shared data safely.
+
+3. **Immutable Objects**:
+   - An object is **immutable** if its state cannot be modified after creation. If an object is immutable, it is inherently thread-safe, as there is no risk of inconsistent updates or visibility issues.
+
+4. **Thread Confinement**:
+   - If an object is only used by one thread and never shared, it is **thread-confined** and does not require synchronization.
+
+#### **Example: Safe Publication with `volatile` and `final`**:
+```java
+public class SafeInitialization {
+    private volatile int x; // ensures visibility across threads
+    private final Object o; // ensures safe publication of this object
+
+    public SafeInitialization() {
+        x = 42;
+        o = new Object();
+    }
+}
+```
+In this example:
+- `x` is volatile, meaning changes are immediately visible to all threads.
+- `o` is final, ensuring that once it’s initialized, all threads will see it correctly.
+
+---
+
+---
+
+### **Semaphores**
+
+A **semaphore** is a synchronization primitive that can control access to a shared resource by multiple threads. It is a flexible mechanism that restricts the number of threads that can access a resource simultaneously.
+
+#### **How Semaphores Work:**
+- A semaphore maintains a **permit count**. 
+  - A thread can acquire a permit (decrementing the count) if the count is greater than 0.
+  - If no permits are available (count is 0), the thread blocks until another thread releases a permit (increments the count).
+  
+- **Semaphores** are often used to limit access to resources such as database connections or to control access to sections of code, such as limiting the number of active threads performing a task at once.
+
+#### **Types of Semaphores**:
+1. **Binary Semaphore**: This behaves like a lock (with values 0 and 1). A thread can acquire the semaphore (set it to 0) and release it (set it to 1), ensuring mutual exclusion.
+2. **Counting Semaphore**: This allows up to a specified number of threads to acquire the semaphore simultaneously. For example, a semaphore initialized with `n` permits can allow up to `n` threads to access a critical section concurrently.
+
+#### **Java Example: Using Semaphore**
+```java
+import java.util.concurrent.Semaphore;
+
+class SemaphoreExample {
+    private final Semaphore semaphore = new Semaphore(3); // allow 3 threads to access
+
+    public void performTask() {
+        try {
+            semaphore.acquire(); // acquire a permit
+            System.out.println(Thread.currentThread().getName() + " acquired the semaphore.");
+            // Critical section (shared resource access)
+            Thread.sleep(2000); // Simulating some work
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            System.out.println(Thread.currentThread().getName() + " releasing the semaphore.");
+            semaphore.release(); // release the permit
+        }
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+        SemaphoreExample example = new SemaphoreExample();
+
+        for (int i = 0; i < 5; i++) {
+            new Thread(example::performTask).start();
+        }
+    }
+}
+```
+In this example:
+- Only 3 threads can access the critical section at a time, as the semaphore allows 3 permits.
+- The remaining threads will block until a permit becomes available.
+
+#### **Semaphores and Producer-Consumer Problem**:
+Semaphores can be used to solve the **Producer-Consumer problem**, where one semaphore tracks empty slots in a buffer, and another tracks filled slots.
+
+---
+
+### **Barriers**
+
+A **barrier** is a synchronization construct that allows multiple threads to wait for each other at a specific point before proceeding. It ensures that all threads reach a certain point before any of them continue execution. Barriers are useful in scenarios like parallel computing, where tasks need to wait for each other at various stages.
+
+#### **How Barriers Work**:
+- **CyclicBarrier**: In Java, the `CyclicBarrier` is used as a barrier. It allows a fixed number of threads to wait for each other to reach the barrier, and once all threads reach the barrier, the barrier is "broken" and all threads proceed.
+- The term "cyclic" means that the barrier can be reused after it has been broken.
+
+#### **Java Example: Using CyclicBarrier**
+```java
+import java.util.concurrent.CyclicBarrier;
+
+class BarrierExample implements Runnable {
+    private final CyclicBarrier barrier;
+
+    public BarrierExample(CyclicBarrier barrier) {
+        this.barrier = barrier;
+    }
+
+    @Override
+    public void run() {
+        try {
+            System.out.println(Thread.currentThread().getName() + " is waiting at the barrier.");
+            barrier.await(); // waiting at the barrier
+            System.out.println(Thread.currentThread().getName() + " has crossed the barrier.");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+        CyclicBarrier barrier = new CyclicBarrier(3, () -> System.out.println("All parties have reached the barrier, let's proceed!"));
+
+        Thread t1 = new Thread(new BarrierExample(barrier));
+        Thread t2 = new Thread(new BarrierExample(barrier));
+        Thread t3 = new Thread(new BarrierExample(barrier));
+
+        t1.start();
+        t2.start();
+        t3.start();
+    }
+}
+```
+In this example:
+- Three threads wait at the barrier (`barrier.await()`).
+- Once all threads reach the barrier, they are allowed to proceed, and the barrier can be reused.
+
+#### **Use Cases for Barriers**:
+- Barriers are typically used in parallel algorithms where different threads must synchronize at certain computation phases before moving forward.
+- They are commonly used in scientific computing and parallel simulations.
+
+---
+
+### **Instance Confinement**
+
+**Instance confinement** is a concurrency technique that involves ensuring that data is only accessed by a single thread. By confining an object or resource to a single thread, you avoid the need for synchronization, since no other thread will access the shared state.
+
+#### **How It Works**:
+- The confined object is never shared between threads. It’s only accessed within the context of the thread that owns it.
+- Since no other threads can access the object, there is no need for explicit locking or synchronization.
+  
+#### **Example of Thread Confinement**:
+Suppose you have an object that holds temporary data for processing. Instead of making this object shared between multiple threads, you can create a new instance of the object for each thread.
+
+```java
+public class ThreadLocalExample {
+    private static final ThreadLocal<Integer> threadLocal = ThreadLocal.withInitial(() -> 0);
+
+    public static void main(String[] args) {
+        Runnable task = () -> {
+            int value = threadLocal.get();
+            value += 1;
+            threadLocal.set(value);
+            System.out.println(Thread.currentThread().getName() + ": " + threadLocal.get());
+        };
+
+        Thread t1 = new Thread(task);
+        Thread t2 = new Thread(task);
+        Thread t3 = new Thread(task);
+
+        t1.start();
+        t2.start();
+        t3.start();
+    }
+}
+```
+In this example:
+- The `ThreadLocal` class confines the data to each thread. Each thread has its own version of the `threadLocal` variable, so they do not interfere with one another.
+
+#### **Advantages of Instance Confinement**:
+- Simplifies reasoning about thread safety by eliminating shared state.
+- Reduces the need for synchronization mechanisms (locks, semaphores, etc.), leading to potentially better performance.
+
+#### **Instance Confinement in Real-World Scenarios**:
+- **Database connections**: When multiple threads access a database, each thread may have its own connection, confining the connection instance to the thread.
+- **Thread-local storage**: Similar to the above example, using thread-local storage ensures that each thread has its own instance of a variable, avoiding synchronization overhead.
+
+---
+
+### **Producer-Consumer Problem**
+
+The **Producer-Consumer Problem** is a classical example of a **synchronization problem**. It involves two types of threads:
+- **Producer**: A thread that generates items and puts them into a shared resource (like a queue).
+- **Consumer**: A thread that consumes (removes) items from the shared resource.
+
+The goal is to ensure that:
+- The producer doesn't try to add an item if the queue is full.
+- The consumer doesn't try to consume from an empty queue.
+
+#### **Solution: Using Blocking Queues**
+
+Java provides the `BlockingQueue` interface, which simplifies the implementation of the producer-consumer problem. A `BlockingQueue` supports operations that wait if the queue is full (for producers) or empty (for consumers).
+
+```java
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+
+class Producer implements Runnable {
+    private final BlockingQueue<Integer> queue;
+
+    public Producer(BlockingQueue<Integer> queue) {
+        this.queue = queue;
+    }
+
+    @Override
+    public void run() {
+        try {
+            while (true) {
+                int item = produce();
+                queue.put(item); // Blocks if the queue is full
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private int produce() {
+        // Producing logic here
+        return 1;
+    }
+}
+
+class Consumer implements Runnable {
+    private final BlockingQueue<Integer> queue;
+
+    public Consumer(BlockingQueue<Integer> queue) {
+        this.queue = queue;
+    }
+
+    @Override
+    public void run() {
+        try {
+            while (true) {
+                int item = queue.take(); // Blocks if the queue is empty
+                consume(item);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private void consume(int item) {
+        // Consuming logic here
+    }
+}
+
+public class ProducerConsumerExample {
+    public static void main(String[] args) {
+        BlockingQueue<Integer> queue = new LinkedBlockingQueue<>(10); // Capacity 10
+        Thread producerThread = new Thread(new Producer(queue));
+        Thread consumerThread = new Thread(new Consumer(queue));
+
+        producerThread.start();
+        consumerThread.start();
+    }
+}
+```
+
+In this example:
+- **`BlockingQueue.put()`** will block if the queue is full, preventing the producer from overfilling the buffer.
+- **`BlockingQueue.take()`** will block if the queue is empty, preventing the consumer from trying to consume when there are no items.
+
+#### **Why `BlockingQueue` is Ideal for Producer-Consumer**:
+- It handles the synchronization logic internally, preventing race conditions without requiring explicit locking mechanisms.
+- It avoids **busy-waiting** (where threads continually check if they can proceed), improving efficiency.
+
+---
+
+### **Summary of Key Concepts**
+
+- **Thread-Safe Class**: A class where no concurrent access results in data races. Ensuring thread safety involves synchronizing access to shared fields, using locks, or ensuring immutability.
+- **Safe Publication**: Objects must be safely published to other threads. Using `volatile`, `final`, and immutability are effective techniques.
+- **Semaphores**: Used to control access to a shared resource by multiple threads. Useful for limiting the number of concurrent threads accessing a resource.  
+- **Barriers**: A synchronization mechanism that forces threads to wait until all have reached a certain point. Useful in parallel algorithms where tasks need to synchronize at specific phases.
+- **Instance Confinement**: A technique that confines the use of objects or resources to a single thread, reducing the need for synchronization and simplifying thread-safety concerns.
+- **Producer-Consumer Problem**: Involves managing synchronization between producers and consumers using a shared resource. `BlockingQueue` provides a simple and efficient way to solve this problem in Java.
+
+---
 
 ## Lecture 04 : Testing & Verification
 
