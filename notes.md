@@ -76,6 +76,37 @@
       - [**Explanation**:](#explanation-1)
     - [**Summary**](#summary)
   - [Lecture 05 : Lock-Free Data Structures](#lecture-05--lock-free-data-structures)
+    - [**Lock-Free Data Structures**](#lock-free-data-structures)
+      - [**Key Benefits of Lock-Free Data Structures**:](#key-benefits-of-lock-free-data-structures)
+    - [**Compare-And-Swap (CAS)**](#compare-and-swap-cas)
+      - [**How CAS Works**:](#how-cas-works)
+      - [**Example of CAS in Java**:](#example-of-cas-in-java)
+    - [**Progress Guarantees in Lock-Free Data Structures**](#progress-guarantees-in-lock-free-data-structures)
+      - [**1. Wait-Free**](#1-wait-free)
+        - [**Characteristics**:](#characteristics)
+        - [**Real-World Example**:](#real-world-example)
+        - [**Code Example**:](#code-example)
+        - [**Key Points**:](#key-points)
+      - [**2. Lock-Free**](#2-lock-free)
+        - [**Characteristics**:](#characteristics-1)
+        - [**Real-World Example**:](#real-world-example-1)
+        - [**Code Example**:](#code-example-1)
+        - [**Key Points**:](#key-points-1)
+      - [**3. Obstruction-Free**](#3-obstruction-free)
+        - [**Characteristics**:](#characteristics-2)
+        - [**Real-World Example**:](#real-world-example-2)
+        - [**Code Example**:](#code-example-2)
+        - [**Key Points**:](#key-points-2)
+      - [**Comparison of Progress Guarantees**](#comparison-of-progress-guarantees)
+      - [**When to Use Each Progress Guarantee**](#when-to-use-each-progress-guarantee)
+    - [**Lock-Free Stack**](#lock-free-stack)
+      - [**Lock-Free Stack Example**:](#lock-free-stack-example)
+    - [**Lock-Free Queue**](#lock-free-queue)
+      - [**Basic Concepts**:](#basic-concepts)
+      - [**Michael-Scott Lock-Free Queue** (Reference to Maged M. Michael and Michael L. Scott, 1996):](#michael-scott-lock-free-queue-reference-to-maged-m-michael-and-michael-l-scott-1996)
+    - [**The ABA Problem**](#the-aba-problem)
+      - [**Solutions to ABA**:](#solutions-to-aba)
+    - [**Summary of Lock-Free Data Structures**](#summary-of-lock-free-data-structures)
   - [Lecture 06 : Linearizability](#lecture-06--linearizability)
 
 
@@ -1055,7 +1086,358 @@ public class BoundedBufferTest {
 - - **Bounded Buffers** solve the classic producer-consumer problem by using synchronization primitives (like semaphores) to ensure that producers and consumers can safely share a fixed-size buffer.
 - The **Semaphore-based implementation** blocks the producer when the buffer is full and blocks the consumer when the buffer is empty.
 
+---
+
 ## Lecture 05 : Lock-Free Data Structures
+
+### **Lock-Free Data Structures**
+
+Lock-free data structures allow multiple threads to operate on shared data without requiring locks, which means that the system is free from deadlock risks and can achieve better scalability in multicore environments.
+
+#### **Key Benefits of Lock-Free Data Structures**:
+- **Deadlock-Free**: Since there are no locks, there's no risk of deadlock.
+- **No Blocking**: Threads can continue working even if others are delayed or paused.
+- **Scalability**: Better scalability in multi-threaded environments, as more threads can work in parallel without waiting on locks.
+
+### **Compare-And-Swap (CAS)**
+
+At the heart of lock-free programming is the **Compare-And-Swap (CAS)** operation, which is provided by modern processors to perform atomic operations.
+
+#### **How CAS Works**:
+- CAS takes three arguments: a memory location, an expected value, and a new value.
+- If the memory location's current value matches the expected value, CAS replaces it with the new value.
+- CAS returns whether the replacement was successful.
+
+This allows for **optimistic concurrency control** where threads attempt to update shared data multiple times without locking, retrying until they succeed.
+
+#### **Example of CAS in Java**:
+```java
+class MyAtomicInteger {
+    private volatile int value;
+
+    public int compareAndSwap(int oldValue, int newValue) {
+        synchronized (this) {
+            int currentValue = value;
+            if (currentValue == oldValue) {
+                value = newValue;
+            }
+            return currentValue;
+        }
+    }
+    
+    public boolean compareAndSet(int oldValue, int newValue) {
+        return oldValue == compareAndSwap(oldValue, newValue);
+    }
+}
+```
+
+**CAS is used in Java’s `AtomicInteger`, `AtomicReference`, and other classes in the `java.util.concurrent.atomic` package**.
+
+---
+
+### **Progress Guarantees in Lock-Free Data Structures**
+
+---
+
+#### **1. Wait-Free**
+**Wait-free** guarantees that **every thread will complete its operation in a finite number of steps**, no matter what other threads are doing. In other words, all threads can make progress **independently** of others. 
+
+##### **Characteristics**:
+- **Strongest Progress Guarantee**: Each thread finishes its work in a bounded number of steps.
+- **No Starvation**: No thread can be delayed or starved by others.
+- **More Complex**: Wait-free algorithms are often harder to design and implement compared to lock-free and obstruction-free algorithms.
+
+##### **Real-World Example**:
+Consider a banking application where multiple users are withdrawing money from the same account. A wait-free algorithm would ensure that every user can successfully withdraw money without being delayed by other users’ operations, and it will guarantee completion in a finite number of steps.
+
+##### **Code Example**: 
+A wait-free counter where every increment operation is guaranteed to complete in a finite number of steps.
+```java
+class WaitFreeCounter {
+    private AtomicInteger value = new AtomicInteger(0);
+
+    public int increment() {
+        int oldValue, newValue;
+        do {
+            oldValue = value.get();
+            newValue = oldValue + 1;
+        } while (!value.compareAndSet(oldValue, newValue));
+        return newValue;
+    }
+
+    public int getValue() {
+        return value.get();
+    }
+}
+```
+In this code, `compareAndSet` ensures that each increment will succeed, and the algorithm will finish regardless of other threads trying to modify the counter at the same time.
+
+##### **Key Points**:
+- Ideal for **real-time systems** where you need strict guarantees that an operation completes within a fixed time.
+- Often more **complex** to implement efficiently than lock-free or obstruction-free algorithms.
+
+---
+
+#### **2. Lock-Free**
+A **lock-free** algorithm guarantees that **at least one thread will make progress in a finite number of steps**, but it doesn't guarantee that every thread will. This means that, at worst, some threads might be delayed indefinitely (leading to possible **starvation**), but the system as a whole continues to make progress.
+
+##### **Characteristics**:
+- **Weaker than Wait-Free**: Not all threads are guaranteed to make progress, but at least one will.
+- **More Efficient**: Lock-free algorithms tend to be simpler and more efficient than wait-free algorithms in practice, because they don't guarantee that all threads make progress.
+- **No Deadlock**: Since there's no mutual exclusion, the algorithm avoids deadlocks, but starvation is still possible.
+
+##### **Real-World Example**:
+In a web server handling multiple clients, a lock-free algorithm guarantees that at least one client request is processed at any given time, even if some requests might experience delays due to high contention.
+
+##### **Code Example**: 
+A lock-free stack using **CAS** (Compare-And-Swap) operations.
+```java
+class LockFreeStack<T> {
+    private AtomicReference<Node<T>> top = new AtomicReference<>();
+
+    private static class Node<T> {
+        final T value;
+        Node<T> next;
+        Node(T value) { this.value = value; }
+    }
+
+    public void push(T value) {
+        Node<T> newNode = new Node<>(value);
+        Node<T> currentTop;
+        do {
+            currentTop = top.get();
+            newNode.next = currentTop;
+        } while (!top.compareAndSet(currentTop, newNode));
+    }
+
+    public T pop() {
+        Node<T> currentTop;
+        Node<T> newTop;
+        do {
+            currentTop = top.get();
+            if (currentTop == null) {
+                return null; // Stack is empty
+            }
+            newTop = currentTop.next;
+        } while (!top.compareAndSet(currentTop, newTop));
+        return currentTop.value;
+    }
+}
+```
+In this lock-free stack, the `push()` and `pop()` methods use **CAS** to modify the stack atomically. The stack guarantees that at least one thread will succeed in completing the operation, even if others may retry due to contention.
+
+##### **Key Points**:
+- Ensures **system-wide progress** but allows **starvation** of individual threads.
+- Easier to implement than wait-free algorithms but still avoids deadlocks.
+
+---
+
+#### **3. Obstruction-Free**
+The **obstruction-free** guarantee is the weakest form of non-blocking progress. It ensures that **a thread will make progress if it executes in isolation**, i.e., if no other thread interferes with it. However, this does not guarantee progress when there is contention from multiple threads.
+
+##### **Characteristics**:
+- **Weakest Progress Guarantee**: Progress is only guaranteed when there’s no interference from other threads.
+- **Simplest to Implement**: Obstruction-free algorithms are often easier to design and implement than lock-free or wait-free ones.
+- **Requires Contention Management**: Without external mechanisms (like back-off strategies or priority queues), multiple threads can prevent each other from making progress indefinitely.
+
+##### **Real-World Example**:
+In a system where tasks are assigned dynamically to multiple threads, an obstruction-free algorithm guarantees that if one thread can work in isolation, it will complete its task. However, under heavy contention, tasks might not complete as fast, or at all, without additional contention management.
+
+##### **Code Example**: 
+Obstruction-free counter (this guarantees progress only if the thread is not interrupted).
+```java
+class ObstructionFreeCounter {
+    private AtomicInteger value = new AtomicInteger(0);
+
+    public int increment() {
+        int oldValue, newValue;
+        do {
+            oldValue = value.get();
+            newValue = oldValue + 1;
+        } while (!value.compareAndSet(oldValue, newValue));
+        return newValue;
+    }
+}
+```
+This implementation is **obstruction-free** because if the thread runs without interruption, it will succeed in incrementing the counter. However, if multiple threads contend, they might prevent each other from making progress.
+
+##### **Key Points**:
+- Simpler than both lock-free and wait-free algorithms.
+- Suffers from **live-lock** or **starvation** under contention, unless additional strategies (e.g., back-off) are used.
+
+---
+
+#### **Comparison of Progress Guarantees**
+
+| **Guarantee**     | **Description**                                                                 | **Strength** | **Implementation Complexity** |
+|-------------------|---------------------------------------------------------------------------------|--------------|-------------------------------|
+| **Wait-Free**      | Every thread completes in a finite number of steps.                             | Strongest    | Most complex                  |
+| **Lock-Free**      | At least one thread will make progress in a finite number of steps.             | Medium       | Less complex                  |
+| **Obstruction-Free** | A thread makes progress if it runs in isolation (no interference).            | Weakest      | Simplest                      |
+
+---
+
+#### **When to Use Each Progress Guarantee**
+
+- **Wait-Free**: 
+  - Best suited for **real-time systems** where you need a guaranteed response time. 
+  - Also important in systems where **fairness** is crucial, and you cannot afford any thread being starved.
+  - Use when **deadlines** must be met, and all operations need to complete in a finite time.
+
+- **Lock-Free**: 
+  - Useful in **high-performance, highly-contended systems** (e.g., databases or networking) where some degree of fairness is acceptable, and the focus is on ensuring the system keeps moving forward.
+  - Use when you need to ensure **progress across the system** but can tolerate some individual threads retrying.
+
+- **Obstruction-Free**: 
+  - Best suited for **low-contention environments** or systems with good **contention management** mechanisms in place (e.g., back-off strategies).
+  - Use when you want the simplest possible **non-blocking solution**, but there is low contention, or you can afford occasional retries.
+
+---
+
+### **Lock-Free Stack**
+
+A lock-free stack is an implementation of a stack that doesn't require locks to control access to the data. Instead, it uses **atomic operations like CAS** to push and pop elements.
+
+#### **Lock-Free Stack Example**:
+```java
+class LockFreeStack<T> {
+    private AtomicReference<Node<T>> top = new AtomicReference<>();
+
+    private static class Node<T> {
+        final T value;
+        Node<T> next;
+        Node(T value) { this.value = value; }
+    }
+
+    public void push(T value) {
+        Node<T> newNode = new Node<>(value);
+        Node<T> currentTop;
+        do {
+            currentTop = top.get();
+            newNode.next = currentTop;
+        } while (!top.compareAndSet(currentTop, newNode));
+    }
+
+    public T pop() {
+        Node<T> currentTop;
+        Node<T> newTop;
+        do {
+            currentTop = top.get();
+            if (currentTop == null) {
+                return null; // Stack is empty
+            }
+            newTop = currentTop.next;
+        } while (!top.compareAndSet(currentTop, newTop));
+        return currentTop.value;
+    }
+}
+```
+
+In this implementation:
+- `push()` and `pop()` use **CAS** to atomically update the stack’s top reference.
+- This ensures **non-blocking** behavior: threads can operate on the stack without waiting for locks.
+
+---
+
+### **Lock-Free Queue**
+
+A **lock-free queue** allows multiple threads to enqueue and dequeue items without the need for locking. The key algorithm for a lock-free queue is Michael and Scott's non-blocking queue, which relies on two atomic pointers: one for the head and one for the tail of the queue.
+
+#### **Basic Concepts**:
+- **Enqueue**: New items are added at the tail.
+- **Dequeue**: Items are removed from the head.
+- Both operations are atomic and do not require mutual exclusion locks.
+
+#### **Michael-Scott Lock-Free Queue** (Reference to [Maged M. Michael and Michael L. Scott, 1996](https://www.cs.rochester.edu/~scott/papers/1996_PODC_queues.pdf)):
+
+```java
+class LockFreeQueue<T> {
+    private static class Node<T> {
+        final T value;
+        volatile Node<T> next;
+
+        Node(T value) {
+            this.value = value;
+            this.next = null;
+        }
+    }
+
+    private final AtomicReference<Node<T>> head;
+    private final AtomicReference<Node<T>> tail;
+
+    public LockFreeQueue() {
+        Node<T> sentinel = new Node<>(null);
+        head = new AtomicReference<>(sentinel);
+        tail = new AtomicReference<>(sentinel);
+    }
+
+    public void enqueue(T value) {
+        Node<T> newNode = new Node<>(value);
+        while (true) {
+            Node<T> currentTail = tail.get();
+            Node<T> tailNext = currentTail.next;
+            if (currentTail == tail.get()) {
+                if (tailNext != null) {
+                    // Tail not pointing to the last node, help advance the tail
+                    tail.compareAndSet(currentTail, tailNext);
+                } else {
+                    // Tail is pointing to the last node, try to insert the new node
+                    if (currentTail.next.compareAndSet(null, newNode)) {
+                        // Successfully added the new node, advance the tail
+                        tail.compareAndSet(currentTail, newNode);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    public T dequeue() {
+        while (true) {
+            Node<T> currentHead = head.get();
+            Node<T> currentTail = tail.get();
+            Node<T> headNext = currentHead.next;
+            if (currentHead == head.get()) {
+                if (currentHead == currentTail) {
+                    if (headNext == null) {
+                        return null; // Queue is empty
+                    }
+                    // Tail is lagging, advance it
+                    tail.compareAndSet(currentTail, headNext);
+                } else {
+                    T value = headNext.value;
+                    if (head.compareAndSet(currentHead, headNext)) {
+                        return value;
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+This queue is **lock-free** because:
+- **Enqueue** and **dequeue** operations use atomic CAS to ensure that each operation completes in a finite number of steps.
+- **No thread holds a lock**, so one thread's delay does not prevent others from making progress.
+
+---
+
+### **The ABA Problem**
+
+The **ABA problem** arises in lock-free data structures when a thread reads a value (e.g., `A`), another thread modifies it to something else (e.g., `B`), and then a third thread changes it back to `A`. The original thread believes that nothing has changed, but in reality, the structure was modified.
+
+#### **Solutions to ABA**:
+1. **Tagged Pointers**: Include additional metadata (e.g., a version number) with each pointer.
+2. **Garbage Collection**: Systems like Java use garbage collection to prevent reused pointers from causing ABA problems.
+
+---
+
+### **Summary of Lock-Free Data Structures**
+
+- **Lock-free data structures** rely on atomic operations like CAS to ensure that operations on shared data are performed safely without locks.
+- **Progress guarantees** are essential for non-blocking data structures. Lock-free data structures ensure at least one thread makes progress, while wait-free structures ensure all threads make progress in a finite number of steps.
+- **Lock-free stacks and queues** are important examples, often implemented with CAS to ensure threads can push, pop, enqueue, and dequeue without needing locks.
+- The **ABA problem** can be a pitfall in lock-free programming, but techniques like tagged pointers or garbage collection mitigate this issue.
 
 
 ## Lecture 06 : Linearizability
